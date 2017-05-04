@@ -47,27 +47,25 @@ class Gadget(object):
     IMAGE_BASES = {}
     ANALYSER = Analyser()
 
-    def __init__(self, fileName, section, arch, lines=None, bytes=None, init=False):
+    def __init__(self, fileName, section, arch, lines=None, bytes=None, semantic_information=None):
         #super(Gadget, self).__init__()
         if isinstance(arch, str):
             arch = ropper.arch.getArchitecture(arch)
         self.__arch = arch
-        self.__lines = None
+        self.__lines = lines
         self.__gadget = None
         self.__category = None
         self._fileName = fileName
         self._section = section
-        self.__bytes = None
-        self.__info = None
-        self.__analysed = False
-        if init:
-            self.__initialize(lines, bytes)
+        self.__bytes = bytes
+        self.__info = semantic_information
+        self.__analysed = semantic_information is not None
+        #if init:
+        #    self.__initialize(lines, bytes)
 
     @property
     def info(self):
-        if not self.__analysed:
-            self.__info = Gadget.ANALYSER.analyse(self)
-            self.__analysed = True
+        
         return self.__info
 
     @info.setter
@@ -266,5 +264,5 @@ class Gadget(object):
         return toReturn
 
     def __repr__(self):
-        return 'Gadget(%s,%s,%s, %s, %s, %s)' % (repr(self.fileName), repr(self.section), repr(self.__arch), repr(self.__lines), repr(self._bytes), repr(True))
+        return 'Gadget(%s, %s, %s, %s, %s, %s)' % (repr(self.fileName), repr(self.section), repr(self.__arch), repr(self.__lines), repr(self._bytes), repr(self.info))
 

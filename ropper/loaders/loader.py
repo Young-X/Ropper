@@ -61,7 +61,7 @@ class Loader(Abstract):
         self._bytes = None
         self._bytes_p = None
         self._arch = arch
-
+        self._analysed = False
 
         self._gadgets = {}
 
@@ -74,9 +74,16 @@ class Loader(Abstract):
             self._arch = self._loadDefaultArch()
 
     @property
+    def analysed(self):
+        return self._analysed
+    
+    @analysed.setter
+    def analysed(self, analysed):
+        self._analysed = analysed
+
+    @property
     def _binary(self):
         return self.__binary
-    
 
     @abstractproperty
     def entryPoint(self):
