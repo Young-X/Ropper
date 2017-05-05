@@ -278,17 +278,18 @@ class Analysis(object):
 
 class SemanticInformation(object):
 
-    def __init__(self, regs, usedRegs, clobberedRegs, mems, expressions, spOffset):
+    def __init__(self, regs, usedRegs, clobberedRegs, mems, expressions, spOffset, checked_constraints={}):
         
         self.regs = regs
         self.usedRegs = usedRegs
-        self.clobberedRegs = clobberedRegs
+        self.clobberedRegisters = clobberedRegs
         self.mems = mems
         self.expressions = expressions
         self.spOffset = spOffset
+        self.checkedConstraints = checked_constraints
 
     def __repr__(self):
-        return 'SemanticInformation(%s, %s, %s, %s, %s, %s)' % (repr(self.regs), repr(self.usedRegs), repr(self.clobberedRegs), repr(self.mems), repr(self.expressions), repr(self.spOffset))
+        return 'SemanticInformation(%s, %s, %s, %s, %s, %s, %s)' % (repr(self.regs), repr(self.usedRegs), repr(self.clobberedRegisters), repr(self.mems), repr(self.expressions), repr(self.spOffset), repr(self.checkedConstraints))
 
 class IRSB_DATA(enum.Enum):
     _enum_ = 'WRITE_REG READ_REG SP_OFFSET CONSTANT'

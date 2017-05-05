@@ -157,7 +157,6 @@ class Gadget(object):
         if bytes:
             self.bytes += bytes
 
-
     def match(self, filter):
         if not filter or len(filter) == 0:
             return True
@@ -165,7 +164,6 @@ class Gadget(object):
             return bool(re.match(filter, self._gadget.replace('.w','')))
         else:
             return bool(re.match(filter, self._gadget))
-
 
     def addressesContainsBytes(self, badbytes):
         line =  self._lines[0]
@@ -176,13 +174,11 @@ class Gadget(object):
                 b = ord(b)
 
             # TODO: This should be changed. Only 4 bytes are checked
-            for i in range(4):
+            for i in range(self.arch.addressLength):
                 if (address & 0xff) == b:
 
                     return True
                 address >>= 8
-
-
 
     def simpleInstructionString(self):
         toReturn = ''
@@ -206,7 +202,7 @@ class Gadget(object):
             toReturn = '%s: ' % cstr(toHex(self._lines[0][0] + self.imageBase, self.__arch.addressLength), analyseColor)
         toReturn += self.simpleInstructionString()
         if self.__info:
-            toReturn += '\nClobbered Register = %s; StackPointer-Offset = %s\n' % (", ".join(list(self.info.clobberedRegs)),self.info.spOffset if self.info.spOffset is not None else 'Undef')
+            toReturn += '\nClobbered Register = %s; StackPointer-Offset = %s\n' % (", ".join(list(self.info.clobberedRegisters)),self.info.spOffset if self.info.spOffset is not None else 'Undef')
         return toReturn
 
     @property

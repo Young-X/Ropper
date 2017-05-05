@@ -695,6 +695,7 @@ class RopperService(object):
                 else:
                     break
                 count += 1
+            self.__saveCache(fc)
         else:        
             for fc in self.__files:
                 s = fc.loader.arch.searcher
@@ -704,6 +705,7 @@ class RopperService(object):
                     else:
                         break
                     count += 1
+                self.__saveCache(fc)
 
     def searchdict(self, search, quality=None, name=None):
         to_return = {}

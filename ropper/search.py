@@ -199,6 +199,26 @@ class Searcher(object):
             to_return.append((reg1,reg2))
         return to_return
 
+    def __isSimilarGadget(self, gadget, found_gadgets):
+        for fg in found_gadgets:
+            if bytes(gadget.bytes).endswith(bytes(fg.bytes)):
+                return True
+        return False
+
+    def __areRegistersNotUsed(self, constraint_values, semantic_info):
+        
+        for reg in constraint_values:
+            if reg[0] not in semantic_info.clobberedRegisters or (reg[1] is not None and reg[1] not in semantic_info.usedRegs):
+                return True
+        return False
+
+    def __areStableRegistersClobbered(self, stable_registers, clobbered_registers):
+        clobber_reg = False
+        for reg in clobbered_registers:
+            if reg in stable_registers:
+                return True
+        return False
+
     def semanticSearch(self, gadgets, constraints, maxLen ,stableRegs=[]):
         if sys.version_info.major > 2:
             raise RopperError('Semantic Search is only available for python2.')
@@ -206,8 +226,6 @@ class Searcher(object):
         if 'z3' not in globals():
             raise RopperError('z3 has to be installed in order to use semantic search')
 
-        
-        
         to_return = []
         count = 0
         max_count = len(gadgets)
@@ -215,78 +233,60 @@ class Searcher(object):
         found = False
         found_gadgets = []
         slicer = Slicer()
-
-        for glen in range(1,maxLen+1):
+        constraint_key = " ".join(list(set(constraints)))
+        for glen in range(1, maxLen+1):
             for gadget in gadgets:
                 if len(gadget) != glen:
                     continue
-                
-                anal = gadget.info#analyser.analyse(gadget)
-                
+                anal = gadget.info
                 if not anal:
                     continue
 
-                no_candidate = False
-                for fg in found_gadgets:
-                   if bytes(gadget.bytes).endswith(bytes(fg.bytes)):
-                    #    print('continue')
-                        no_candidate = True
-                        break
-
-                if no_candidate:
-                    continue
-
-                no_candidate = False
                 constraint_values = self.extractValues(constraints, anal, gadget.arch.info)
-                for reg in constraint_values:
-                    if reg[0] not in anal.clobberedRegs or (reg[1] is not None and reg[1] not in anal.usedRegs):
-                        no_candidate = True
 
-                if no_candidate:
+                if self.__isSimilarGadget(gadget, found_gadgets) \
+                or self.__areRegistersNotUsed(constraint_values, anal) \
+                or self.__areStableRegistersClobbered(stableRegs, anal.clobberedRegisters):
                     continue
 
-                clobber_reg = False
-                for reg in anal.clobberedRegs:
-                    if reg in stableRegs:
-                        clobber_reg = True
-                if clobber_reg:
-                    continue
+                constraint_string = self._createConstraint(constraints, anal, gadget.arch.info)
+                if constraint_key not in anal.checkedConstraints:
+                    set_reg = constraint_values[0][0]
+                    slice_instructions = []
+                    slice = slicer.slice(anal.expressions, [set_reg for set_reg, get_reg in constraint_values])
+                    count += 1
+                    solver = z3.Solver()
 
-                set_reg = constraint_values[0][0]
-                slice_instructions = []
-                
-                slice = slicer.slice(anal.expressions, [set_reg for set_reg, get_reg in constraint_values ])
-                
-                count += 1
-                solver = z3.Solver()
+                    expr_len = len(anal.expressions)
+                    expr = None
+                    tmp = None
 
-                expr_len = len(anal.expressions)
-                expr = None
-                tmp = None
-                
-                for inst in slice.expressions:
-                    
-                    tmp = inst
-                   
-                    if tmp == False:
-                        continue
-                    
-                    if expr is None:
-                        expr = tmp
+                    for inst in slice.expressions:
+                        tmp = inst
+                        if tmp == False:
+                            continue
+                        if expr is None:
+                            expr = tmp
+                        else:
+                            expr = 'And(%s, %s)' % (expr, tmp)
+
+                    expr = ExpressionBuilder().build(anal.regs, anal.mems, expr, constraint_string)
+                    solver.add(expr)
+
+                    if solver.check() == z3.unsat:
+                        found = True
+                        found_gadgets.append(gadget)
+                        anal.checkedConstraints[constraint_key] = True
+                        yield (gadget, count)
                     else:
-    
-                        expr = 'And(%s, %s)' % (expr, tmp)
-                 
-                expr = ExpressionBuilder().build(anal.regs, anal.mems, expr, self._createConstraint(constraints, anal, gadget.arch.info))
-                
-
-                
-                solver.add(expr)
-                
-                if solver.check() == z3.unsat:
-                    found = True
+                        anal.checkedConstraints[constraint_key] = False
+                elif anal.checkedConstraints[constraint_key]:
+                    count += 1
                     found_gadgets.append(gadget)
-                    yield (gadget,count)
+                    yield (gadget, count)
+                else:
+                    count += 1
+                
     
     def search(self, gadgets, filter, quality = None, pprinter=None):
         filter = self.prepareFilter(filter)
