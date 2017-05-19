@@ -25,7 +25,7 @@ try:
         import pyvex
         import archinfo
 except ImportError as e:
-    raise RopperError(e)
+    pass
 
 from ropper.common.utils import toHex, isHex
 import ropper.arch
@@ -34,6 +34,18 @@ import ropper.common.enum as enum
 import math
 import re
 
+def create_register_expression(register_accessor, size, high=False):
+    register_size = int(register_accessor.split('_')[2])
+    if size < register_size:
+        if high:
+            return 'Extract(%d, 8, self.%s)' % (size+8-1, register_accessor)
+        else:
+            return 'Extract(%d, 0, self.%s)' % (size-1, register_accessor)
+    else:
+        return 'self.%s' % register_accessor
+
+def create_number_expression(number, size):
+    return "BitVecVal(%d, %d)" % (number, size)
 
 class Category(enum.Enum):
     _enum_ = 'NONE WRITE_MEM_FROM_MEM WRITE_REG_FROM_MEM WRITE_REG_FROM_REG WRITE_MEM_FROM_REG NEG_REG STACK_PIVOTING LOAD_REG LOAD_MEM STACK_PIVOT SYSCALL JMP CALL WRITE_MEM INC_REG CLEAR_REG SUB_REG ADD_REG SUB_REG MUL_REG DIV_REG XCHG_REG PUSHAD WRITE_MEM'
@@ -122,7 +134,7 @@ class Analysis(object):
         self.__instructions = []
         self.__mem = None
         self.__arch = arch
-        self.__registers = {}
+        self.__registerAccessors = {}
         self.mems = []
         self.__regCount = {}
         self.__mem_counter = 0
@@ -137,7 +149,7 @@ class Analysis(object):
 
     @property
     def regs(self):
-        return self.__registers
+        return self.__registerAccessors
 
     @property
     def arch(self):
@@ -231,60 +243,60 @@ class Analysis(object):
         count = self.__regCount.get((reg), 1)
         self.__regCount[(reg)] = count + 1
 
-        reg_list = self.__registers.get((reg))
+        reg_list = self.__registerAccessors.get((reg))
         if not reg_list:
-            reg_list = ['%s_%d_%d' % (reg, 0, register_size)]
-            self.__registers[(reg)] = reg_list
+            reg_list = ['%s_%d_%d' % (reg, 0, real_size)]
+            self.__registerAccessors[(reg)] = reg_list
+        
+        reg_list.append('%s_%d_%d' % (reg, count, real_size))
 
-        reg_list.append('%s_%d_%d' % (reg, count, register_size))
-
-        if size < register_size:
-            return 'Extract(%d, 0, self.%s) == %s' % (size - 1, self.__registers[(reg)][-1], value)
+        if size < real_size:
+            return 'Extract(%d, 0, self.%s) == %s' %(size-1,self.__registerAccessors[(reg)][-1],value)
         else:
-            return 'self.%s == %s' % (self.__registers[(reg)][-1], value)
+            return 'self.%s == %s' % (self.__registerAccessors[(reg)][-1], value)
 
-    def readRegister(self, offset, size, level=-1):
+    def __getRegisterAccessor(self, register, size):
+        register_list = self.__registerAccessors.get((register))
+
+        if not register_list:
+            register_list = ['%s_%d_%d' % (register, self.__regCount.get(register, 0), size)]
+            self.__registerAccessors[register] = register_list
+
+        return self.__registerAccessors[register][-1]
+
+    def readRegister(self, offset, size):
         name = offset
         register_size = 0
+
         if isinstance(name, (int, long)):
             name = self.__arch.translate_register_name(
                 offset & 0xfffffffe, size)
 
         self.currentInstruction.usedRegs.update([name])
         register_size = self.__arch.registers.get(name)
-
-        if register_size is None:
-            register_size = self.arch.bits * 2
+        if register_size == None:
+            register_size = self.arch.bits*2
         else:
-            register_size = register_size[1] * 8
+            register_size = register_size[1]*8
 
-        reg_list = self.__registers.get((name))
+        reg_acc = self.__getRegisterAccessor(name, register_size)
 
-        if not reg_list:
-            reg_list = ['%s_%d_%d' %
-                        (name, self.__regCount.get(name, 0), register_size)]
-            self.__registers[(name)] = reg_list
+        return create_register_expression(reg_acc, size, bool(offset & 1) if type(offset) is not str else False)
 
-        if size < register_size:
-            if offset & 1:
-                return 'Extract(%d, 8, self.%s)' % (size + 8 - 1, self.__registers[(name)][level])
-            else:
-                return 'Extract(%d, 0, self.%s)' % (size - 1, self.__registers[(name)][level])
+class SemanticInformation(object):
 
-        else:
-            return 'self.%s' % self.__registers[(name)][level]
-
-
-class AnalysisResult(object):
-
-    def __init__(self, arch, regs, usedRegs, clobberedRegs, mems, expressions, spOffset):
-        self.arch = arch
+    def __init__(self, regs, usedRegs, clobberedRegs, mems, expressions, spOffset, checked_constraints={}):
+        
         self.regs = regs
         self.usedRegs = usedRegs
-        self.clobberedRegs = clobberedRegs
+        self.clobberedRegisters = clobberedRegs
         self.mems = mems
         self.expressions = expressions
         self.spOffset = spOffset
+        self.checkedConstraints = checked_constraints
+
+    def __repr__(self):
+        return 'SemanticInformation(%s, %s, %s, %s, %s, %s, %s)' % (repr(self.regs), repr(self.usedRegs), repr(self.clobberedRegisters), repr(self.mems), repr(self.expressions), repr(self.spOffset), repr(self.checkedConstraints))
 
 
 class IRSB_DATA(enum.Enum):
@@ -577,8 +589,7 @@ class IRSBAnalyser(object):
             ci = anal.currentInstruction
             ci.expressions.append(expr)
 
-        # AnalysisResult(anal.arch, anal.regs, anal.usedRegs, anal.clobberedRegs, anal.mems, anal.expressions, anal.spOffset)
-        return anal
+        return SemanticInformation(anal.regs, anal.usedRegs, anal.clobberedRegs, anal.mems, anal.expressions, anal.spOffset)
 
 
 class Slice(object):
